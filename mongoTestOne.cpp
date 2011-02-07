@@ -9,6 +9,7 @@
 static mongoDeploy::ReplicaSetProcess deploy () {
 	program::Options opts;
 	opts.push_back (std::make_pair ("dur", ""));
+	opts.push_back (std::make_pair ("oplogSize", "600"));
 	std::vector< std::pair<program::Options,mongo::BSONObj> > specs;
 	specs.push_back (std::make_pair (opts, mongo::BSONObj()));
 	specs.push_back (std::make_pair (opts, mongo::BSONObj()));
