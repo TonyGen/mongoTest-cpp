@@ -21,6 +21,11 @@ class Shard1 : public clusterRun::Routine {
 	void operator() ();  // override
 };
 
+class Shard2 : public clusterRun::Routine {
+	void registerProcedures ();  // override
+	void operator() ();  // override
+};
+
 class Simple : public clusterRun::Routine {
 	void registerProcedures ();
 	void operator() ();

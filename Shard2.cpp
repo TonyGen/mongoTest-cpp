@@ -7,20 +7,31 @@
 #include "mongoTest.h"
 
 static mongoDeploy::ShardSet deploy () {
-	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someClients(1));
+	program::Options sopts;
+	sopts.push_back (std::make_pair ("chunkSize", "2"));
+	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someClients(1), program::emptyOptions, sopts);
 	program::Options opts;
 	opts.push_back (std::make_pair ("dur", ""));
-	opts.push_back (std::make_pair ("oplogSize", "600"));
+	opts.push_back (std::make_pair ("oplogSize", "300"));
 	opts.push_back (std::make_pair ("noprealloc", ""));
 	std::vector<mongoDeploy::RsMemberSpec> specs;
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
-	specs.push_back (mongoDeploy::RsMemberSpec (opts, BSON ("arbiterOnly" << true)));
+	specs.push_back (mongoDeploy::RsMemberSpec (program::emptyOptions, BSON ("arbiterOnly" << true)));
+	s.addStartShard (cluster::someServers(3), specs);
 	s.addStartShard (cluster::someServers(3), specs);
 	return s;
 }
 
-static unsigned long long numDocs = 10000;
+static unsigned long long numDocs = 30000;
+
+static vector<mongo::BSONObj> docs (unsigned round, unsigned count) {
+	string text = mongoTest::makeText ();
+	vector<mongo::BSONObj> docs;
+	for (unsigned i = 0; i < count; i++)
+		docs.push_back (BSON ("_id" << (count * round) + i << "text" << text));
+	return docs;
+}
 
 static void loadInitialData (mongoDeploy::ShardSet s) {
 	using namespace mongo;
@@ -30,22 +41,34 @@ static void loadInitialData (mongoDeploy::ShardSet s) {
 	DBClientConnection c;
 	c.connect (h);
 
-	//BSONObj cmd = BSON ("enablesharding" << "test");
-	//cout << cmd << " -> " << endl;
-	//c.runCommand ("admin", cmd, info);
-	//cout << info << endl;
+	// enable sharding on "test" db
+	BSONObj cmd = BSON ("enablesharding" << "test");
+	cout << cmd << " -> " << endl;
+	c.runCommand ("admin", cmd, info);
+	cout << info << endl;
+
+	// shard "test.col" collection on "_id"
+	cmd = BSON ("shardcollection" << "test.col" << "key" << BSON ("_id" << 1));
+	cout << cmd << " -> " << endl;
+	c.runCommand ("admin", cmd, info);
+	cout << info << endl;
 
 	for (unsigned i = 0; i < numDocs/1000; i++)
-		c.insert ("test.col", mongoTest::xDocs (1000));
+		c.insert ("test.col", docs (i, 1000));
 
-	BSONObj getLastErr = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 2);
-	cout << getLastErr << " -> " << endl;
-    c.runCommand ("test", getLastErr, info);
+	cmd = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 2);
+	cout << cmd << " -> " << endl;
+    c.runCommand ("test", cmd, info);
+	cout << info << endl;
+
+	cmd = BSON ("dbstats" << 1);
+	cout << cmd << " -> " << endl;
+    c.runCommand ("test", cmd, info);
 	cout << info << endl;
 }
 
 /** Use namespace for Procedures to avoid name clashes */
-namespace _Shard1 {
+namespace _Shard2 {
 void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 	using namespace mongo;
 
@@ -78,33 +101,32 @@ void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 }
 
 void killer (mongoDeploy::ShardSet s) {
-	mongoDeploy::ReplicaSet rs = s.shards[0];
+	std::vector<remote::Process> procs = filter (mongoDeploy::isMongoD, mongoDeploy::allProcesses (s));
 	while (true) {
-		unsigned pause = rand() % 60;
-		job::sleep (pause);
-		unsigned r = rand() % rs.replicas.size();
-		remote::signal (SIGKILL, rs.replicas[r]);
-		std::cout << "Killed " << r << std::endl;
-		pause = rand() % 30;
-		job::sleep (pause);
-		remote::restart (rs.replicas[r]);
-		std::cout << "Restarted  " << r << std::endl;
+		job::sleep (rand() % 60);
+		unsigned r = rand() % procs.size() - 1;  //exclude config server
+		remote::Process p = procs[r+1];
+		remote::signal (SIGKILL, p);
+		std::cout << "Killed " << p << std::endl;
+		job::sleep (rand() % 30);
+		remote::restart (p);
+		std::cout << "Restarted  " << p << std::endl;
 	}
 }
 }
 
-void mongoTest::Shard1::registerProcedures () {
-	REGISTER_PROCEDURE2 (_Shard1::queryAndUpdateData);
-	REGISTER_PROCEDURE1 (_Shard1::killer);
+void mongoTest::Shard2::registerProcedures () {
+	REGISTER_PROCEDURE2 (_Shard2::queryAndUpdateData);
+	REGISTER_PROCEDURE1 (_Shard2::killer);
 }
 
-void mongoTest::Shard1::operator() () {
+void mongoTest::Shard2::operator() () {
 	using namespace std;
 	mongoDeploy::ShardSet s = deploy ();
 	loadInitialData (s);
 	cout << "1. loaded" << endl;
-	boost::function1<void,unsigned> access = boost::bind (PROCEDURE2 (_Shard1::queryAndUpdateData), s, _1);
-	boost::function0<void> kill = boost::bind (PROCEDURE1 (_Shard1::killer), s);
+	boost::function1<void,unsigned> access = boost::bind (PROCEDURE2 (_Shard2::queryAndUpdateData), s, _1);
+	boost::function0<void> kill = boost::bind (PROCEDURE1 (_Shard2::killer), s);
 	vector< pair< remote::Host, boost::function0<void> > > kills;
 	kills.push_back (make_pair (remote::thisHost(), kill));
 	cout << "2. functions bound" << endl;
