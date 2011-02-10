@@ -16,19 +16,9 @@ class One : public clusterRun::Routine {
 	void operator() ();  // override
 };
 
-class Two : public clusterRun::Routine {
+class Shard1 : public clusterRun::Routine {
 	void registerProcedures ();  // override
 	void operator() ();  // override
-};
-
-class V1_8 : public clusterRun::Routine {
-	void registerProcedures ();
-	void operator() ();
-};
-
-class V1_8_rs : public clusterRun::Routine {
-	void registerProcedures ();
-	void operator() ();
 };
 
 class Simple : public clusterRun::Routine {

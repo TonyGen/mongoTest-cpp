@@ -1,4 +1,5 @@
-Install dependent library first
+Install dependent libraries first
+- [cluster](https://github.com/TonyGen/cluster-cpp)
 - [mongoDeploy](https://github.com/TonyGen/mongoDeploy-cpp)
 
 Remove '-ccp' suffix when downloading

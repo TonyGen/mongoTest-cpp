@@ -6,7 +6,8 @@
 #include <cluster/cluster.h>
 #include "mongoTest.h"
 
-static mongoDeploy::ReplicaSet deploy () {
+static mongoDeploy::ShardSet deploy () {
+	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someClients(1));
 	program::Options opts;
 	opts.push_back (std::make_pair ("dur", ""));
 	opts.push_back (std::make_pair ("oplogSize", "600"));
@@ -14,19 +15,24 @@ static mongoDeploy::ReplicaSet deploy () {
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, BSON ("arbiterOnly" << true)));
-	return mongoDeploy::startReplicaSet (cluster::someServers(3), specs);
+	s.addStartShard (cluster::someServers(3), specs);
+	return s;
 }
 
 static unsigned long long numDocs = 10000;
 
-static void loadInitialData (mongoDeploy::ReplicaSet rs) {
+static void loadInitialData (mongoDeploy::ShardSet s) {
 	using namespace mongo;
 	BSONObj info;
 
-	vector<mongo::HostAndPort> hs = fmap (mongoDeploy::hostAndPort, rs.replicas);
-	DBClientReplicaSet c (rs.name(), hs);
-	bool ok = c.connect();
-	if (!ok) throw std::runtime_error ("Unable to connect to replica set " + rs.name());
+	std::string h = mongoDeploy::hostAndPort (s.routers[0]);
+	DBClientConnection c;
+	c.connect (h);
+
+	BSONObj cmd = BSON ("enablesharding" << "test");
+	cout << cmd << " -> " << endl;
+	c.runCommand ("admin", cmd, info);
+	cout << info << endl;
 
 	for (unsigned i = 0; i < numDocs/1000; i++)
 		c.insert ("test.col", mongoTest::xDocs (1000));
@@ -38,14 +44,13 @@ static void loadInitialData (mongoDeploy::ReplicaSet rs) {
 }
 
 /** Use namespace for Procedures to avoid name clashes */
-namespace _One {
-void queryAndUpdateData (mongoDeploy::ReplicaSet rs, unsigned z) {
+namespace _Shard1 {
+void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 	using namespace mongo;
 
-	vector<mongo::HostAndPort> hs = fmap (mongoDeploy::hostAndPort, rs.replicas);
-	DBClientReplicaSet c (rs.name(), hs);
-	bool ok = c.connect();
-	if (!ok) throw std::runtime_error ("Unable to connect to replica set " + rs.name());
+	std::string h = mongoDeploy::hostAndPort (s.routers[0]);
+	DBClientConnection c;
+	c.connect (h);
 
 	for (unsigned i = 0; i < 100; i++) {
 		unsigned long long n;
@@ -70,7 +75,8 @@ void queryAndUpdateData (mongoDeploy::ReplicaSet rs, unsigned z) {
 	}
 }
 
-void killer (mongoDeploy::ReplicaSet rs) {
+void killer (mongoDeploy::ShardSet s) {
+	mongoDeploy::ReplicaSet rs = s.shards[0];
 	while (true) {
 		unsigned pause = rand() % 60;
 		job::sleep (pause);
@@ -85,21 +91,22 @@ void killer (mongoDeploy::ReplicaSet rs) {
 }
 }
 
-void mongoTest::One::registerProcedures () {
-	REGISTER_PROCEDURE2 (_One::queryAndUpdateData);
-	REGISTER_PROCEDURE1 (_One::killer);
+void mongoTest::Shard1::registerProcedures () {
+	REGISTER_PROCEDURE2 (_Shard1::queryAndUpdateData);
+	REGISTER_PROCEDURE1 (_Shard1::killer);
 }
 
-void mongoTest::One::operator() () {
+void mongoTest::Shard1::operator() () {
 	using namespace std;
-	mongoDeploy::ReplicaSet rs = deploy ();
-	loadInitialData (rs);
-	boost::function1<void,unsigned> access = boost::bind (PROCEDURE2 (_One::queryAndUpdateData), rs, _1);
-	boost::function0<void> kill = boost::bind (PROCEDURE1 (_One::killer), rs);
-	vector< pair< remote::Host, boost::function0<void> > > kills;
-	kills.push_back (make_pair (remote::thisHost(), kill));
-	remote::parallel (cluster::clientActs (5, access), kills);
-/*	start (networkProblems);
+	mongoDeploy::ShardSet s = deploy ();
+	//loadInitialData (s);
+	//boost::function1<void,unsigned> access = boost::bind (PROCEDURE2 (_Shard1::queryAndUpdateData), s, _1);
+	//boost::function0<void> kill = boost::bind (PROCEDURE1 (_Shard1::killer), s);
+	//vector< pair< remote::Host, boost::function0<void> > > kills;
+	//kills.push_back (make_pair (remote::thisHost(), kill));
+	//remote::parallel (cluster::clientActs (5, access), kills);
+
+	/*	start (networkProblems);
 	start (addRemoveServers);
 	sleep (hours (24));
 	stopAll (); */

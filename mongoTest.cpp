@@ -56,6 +56,7 @@ void mongoTest::Simple::registerProcedures() {
 static map <string, boost::shared_ptr<clusterRun::Routine> > routines () {
 	map <string, boost::shared_ptr<clusterRun::Routine> > routines;
 	ROUTINE (mongoTest::One);
+	ROUTINE (mongoTest::Shard1);
 	ROUTINE (mongoTest::Simple);
 	return routines;
 }
