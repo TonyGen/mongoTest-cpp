@@ -17,7 +17,9 @@ static mongoDeploy::ShardSet deploy () {
 	std::vector<mongoDeploy::RsMemberSpec> specs;
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
-	specs.push_back (mongoDeploy::RsMemberSpec (program::emptyOptions, BSON ("arbiterOnly" << true)));
+	program::Options opts1;
+	opts1.push_back (std::make_pair ("dur", ""));
+	specs.push_back (mongoDeploy::RsMemberSpec (opts1, BSON ("arbiterOnly" << true)));
 	s.addStartShard (cluster::someServers(3), specs);
 	s.addStartShard (cluster::someServers(3), specs);
 	return s;
@@ -31,6 +33,14 @@ static vector<mongo::BSONObj> docs (unsigned round, unsigned count) {
 	for (unsigned i = 0; i < count; i++)
 		docs.push_back (BSON ("_id" << (count * round) + i << "text" << text));
 	return docs;
+}
+
+static void confirmWrite (mongo::DBClientConnection& c) {
+	mongo::BSONObj info;
+	mongo::BSONObj cmd = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 2);
+	std::cout << cmd << " -> " << std::endl;
+    c.runCommand ("test", cmd, info);
+	std::cout << info << std::endl;
 }
 
 static void loadInitialData (mongoDeploy::ShardSet s) {
@@ -55,11 +65,7 @@ static void loadInitialData (mongoDeploy::ShardSet s) {
 
 	for (unsigned i = 0; i < numDocs/1000; i++)
 		c.insert ("test.col", docs (i, 1000));
-
-	cmd = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 2);
-	cout << cmd << " -> " << endl;
-    c.runCommand ("test", cmd, info);
-	cout << info << endl;
+	confirmWrite (c);
 
 	cmd = BSON ("dbstats" << 1);
 	cout << cmd << " -> " << endl;
@@ -83,6 +89,7 @@ void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 		job::sleep (z + 5);
 		try {
 			c.update ("test.col", BSONObj(), BSON ("$push" << BSON ("z" << z)), false, true);
+			confirmWrite (c);
 			n = c.count ("test.col", BSON ("z" << z));
 		} catch (...) {
 			std::cout << "First query after kill failed as expected" << std::endl;
@@ -91,6 +98,7 @@ void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 		//mongoTest::checkEqual (n, numDocs);
 		try {
 			c.update ("test.col", BSONObj(), BSON ("$pull" << BSON ("z" << z)), false, true);
+			confirmWrite (c);
 			n = c.count ("test.col", BSON ("z" << z));
 		} catch (...) {
 			std::cout << "First query after kill failed as expected" << std::endl;
@@ -100,8 +108,15 @@ void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 	}
 }
 
+static std::vector<remote::Process> allShardProcesses (mongoDeploy::ShardSet s) {
+	std::vector<remote::Process> procs;
+	for (unsigned i = 0; i < s.shards.size(); i ++)
+		procs.insert (procs.end(), s.shards[i].replicas.begin(), s.shards[i].replicas.end());
+	return procs;
+}
+
 void killer (mongoDeploy::ShardSet s) {
-	std::vector<remote::Process> procs = filter (mongoDeploy::isMongoD, mongoDeploy::allProcesses (s));
+	std::vector<remote::Process> procs = allShardProcesses (s);
 	while (true) {
 		job::sleep (rand() % 60);
 		unsigned r = rand() % procs.size() - 1;  //exclude config server
