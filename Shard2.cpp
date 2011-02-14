@@ -12,26 +12,29 @@ static mongoDeploy::ShardSet deploy () {
 	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someClients(1), program::emptyOptions, sopts);
 	program::Options opts;
 	opts.push_back (std::make_pair ("dur", ""));
-	opts.push_back (std::make_pair ("oplogSize", "300"));
+	opts.push_back (std::make_pair ("oplogSize", "200"));
 	opts.push_back (std::make_pair ("noprealloc", ""));
 	std::vector<mongoDeploy::RsMemberSpec> specs;
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
 	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
 	program::Options opts1;
 	opts1.push_back (std::make_pair ("dur", ""));
+	opts1.push_back (std::make_pair ("oplogSize", "4"));
+	opts1.push_back (std::make_pair ("noprealloc", ""));
 	specs.push_back (mongoDeploy::RsMemberSpec (opts1, BSON ("arbiterOnly" << true)));
 	s.addStartShard (cluster::someServers(3), specs);
 	s.addStartShard (cluster::someServers(3), specs);
 	return s;
 }
 
-static unsigned long long numDocs = 30000;
+static unsigned long long numDocs = 40000;
+static unsigned long long batchSize = 500;
 
 static vector<mongo::BSONObj> docs (unsigned round, unsigned count) {
 	string text = mongoTest::makeText ();
 	vector<mongo::BSONObj> docs;
 	for (unsigned i = 0; i < count; i++)
-		docs.push_back (BSON ("_id" << (count * round) + i << "text" << text));
+		docs.push_back (BSON ("_id" << (count * round) + i << "x" << i << "text" << text));
 	return docs;
 }
 
@@ -63,8 +66,8 @@ static void loadInitialData (mongoDeploy::ShardSet s) {
 	c.runCommand ("admin", cmd, info);
 	cout << info << endl;
 
-	for (unsigned i = 0; i < numDocs/1000; i++)
-		c.insert ("test.col", docs (i, 1000));
+	for (unsigned i = 0; i < numDocs/batchSize; i++)
+		c.insert ("test.col", docs (i, batchSize));
 	confirmWrite (c);
 
 	cmd = BSON ("dbstats" << 1);
@@ -88,16 +91,16 @@ void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 		std::cout << "update " << z << " round " << i << std::endl;
 		job::sleep (z + 5);
 		try {
-			c.update ("test.col", BSONObj(), BSON ("$push" << BSON ("z" << z)), false, true);
+			c.update ("test.col", BSON ("x" << i), BSON ("$push" << BSON ("z" << z)), false, true);
 			confirmWrite (c);
 			n = c.count ("test.col", BSON ("z" << z));
 		} catch (...) {
 			std::cout << "First query after kill failed as expected" << std::endl;
 			continue;
 		}
-		//mongoTest::checkEqual (n, numDocs);
+		//mongoTest::checkEqual (n, numDocs/batchSize);
 		try {
-			c.update ("test.col", BSONObj(), BSON ("$pull" << BSON ("z" << z)), false, true);
+			c.update ("test.col", BSON ("x" << i), BSON ("$pull" << BSON ("z" << z)), false, true);
 			confirmWrite (c);
 			n = c.count ("test.col", BSON ("z" << z));
 		} catch (...) {
