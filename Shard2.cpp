@@ -49,7 +49,7 @@ static mongoDeploy::ShardSet deploy () {
 	return s;
 }
 
-static unsigned long long numDocs = 200000;
+static unsigned long long numDocs = 100000;
 static unsigned long long batchSize = 1000;
 
 static vector<mongo::BSONObj> docs (unsigned round, unsigned count) {
