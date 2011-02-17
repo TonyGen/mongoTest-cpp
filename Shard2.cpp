@@ -87,7 +87,7 @@ void insertData (mongoDeploy::ShardSet s) {
 		} catch (...) {
 			std::cout << "Insert connection failed, retry next round" << std::endl;
 		}
-		job::sleep (3);
+		job::sleep (2);
 	}
 
 	try {
@@ -166,10 +166,10 @@ void mongoTest::Shard2::operator() () {
 	using namespace std;
 	mongoDeploy::ShardSet s = deploy ();
 	vector< pair< remote::Host, boost::function0<void> > > mods;
-	boost::function0<void> load = boost::bind (PROCEDURE1 (_Shard2::insertData), s);
-	boost::function1<void,unsigned> access = boost::bind (PROCEDURE2 (_Shard2::updateData), s, _1);
-	mods.push_back (make_pair (remote::thisHost(), load));
-	push_all (mods, cluster::clientActs (2, access));
+	boost::function0<void> insert = boost::bind (PROCEDURE1 (_Shard2::insertData), s);
+	boost::function1<void,unsigned> update = boost::bind (PROCEDURE2 (_Shard2::updateData), s, _1);
+	mods.push_back (make_pair (remote::thisHost(), insert));
+	push_all (mods, cluster::clientActs (0, update));
 	vector< pair< remote::Host, boost::function0<void> > > kills;
 	boost::function0<void> kill = boost::bind (PROCEDURE1 (_Shard2::killer), s);
 	kills.push_back (make_pair (remote::thisHost(), kill));
