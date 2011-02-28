@@ -55,6 +55,8 @@ std::string makeText (unsigned length = xDocTextSize);
 
 std::vector <mongo::BSONObj> xDocs (unsigned count);
 
+//void printShardingStatus (mongo::DbClientConnection& c, bool verbose);
+
 }
 
 #endif /* TESTS_H_ */

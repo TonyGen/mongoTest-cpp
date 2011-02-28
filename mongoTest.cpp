@@ -25,29 +25,34 @@ vector<mongo::BSONObj> mongoTest::xDocs (unsigned count) {
 #include <cluster/cluster.h>
 
 namespace _simple {
-void act (unsigned delay) {
+Unit act (unsigned delay, int z) {
 	using namespace std;
-	cout << "Yo Simple " << delay << " " << job::thisThread() << endl;
+	cout << "Yo Simple " << delay << " " << z << " " << job::thisThread() << endl;
 	job::sleep (delay);
 	if (delay == 2) throw mongoTest::BadResult ("ha");
-	cout << "yo done " << delay << " " << job::thisThread() << endl;
+	cout << "yo done " << delay << " " << z << " " << job::thisThread() << endl;
+	return unit;
 }
-void act2 () {
+Unit act2 () {
 	using namespace std;
 	cout << "act2 begin " << job::thisThread() << endl;
 	job::sleep (30);
 	cout << "act2 end " << job::thisThread() << endl;
+	return unit;
 }
 }
 
 void mongoTest::Simple::operator() () {
-	std::vector< std::pair< remote::Host, boost::function0<void> > > acts;
-	acts.push_back (std::make_pair (remote::thisHost(), PROCEDURE0 (_simple::act2)));
-	remote::parallel (cluster::clientActs (4, PROCEDURE1 (_simple::act)), acts);
+	Action0<Unit> act = action0 (action1 (PROCEDURE2 (_simple::act), (unsigned)1), 3);
+	Unit u = act ();
+	std::cout << u << std::endl;
+	//std::vector< std::pair< remote::Host, Action0<Unit> > > acts;
+	//acts.push_back (std::make_pair (remote::thisHost(), action0 (PROCEDURE0 (_simple::act2))));
+	//remote::parallel (cluster::clientActs (4, PROCEDURE1 (_simple::act)), acts);
 }
 
 void mongoTest::Simple::registerProcedures() {
-	REGISTER_PROCEDURE1 (_simple::act);
+	REGISTER_PROCEDURE2 (_simple::act);
 	REGISTER_PROCEDURE0 (_simple::act2);
 }
 
@@ -65,3 +70,57 @@ static map <string, boost::shared_ptr<clusterRun::Routine> > routines () {
 int main (int argc, char* argv[]) {
 	clusterRun::main (routines(), argc, argv);
 }
+
+/*
+void mongoTest::printShardingStatus (mongo::DbClientConnection& c, bool verbose) {
+	using namespace std;
+	using namespace mongo;
+
+    BSONObj ver = c.findOne ("config.version", BSONObj());
+    if (ver.isEmpty()) {cout << "not a shard db!" << endl; return;}
+
+    cout << "--- Sharding Status --- " << endl;
+    cout << "  sharding version: " << ver << endl;
+
+    cout << "  shards:" << endl;
+    auto_ptr<DbClientCursor> cursor = c.query ("config.shards", BSONObj());
+    while (cursor->more()) {cout << "      " << cursor->next() << endl;}
+
+    cout << "  databases:" << endl;
+    auto_ptr<DbClientCursor> cursor = c.query ("config.databases", QUERY().sort("name"));
+    while (cursor->more()) {
+    	BSONObj db = cursor->next();
+        cout << "\t" << db << endl;
+        if (db.getBoolField ("partitioned")) {
+        	auto_ptr<DbClientCursor> cursor = c.query ("config.collections", QUERY ("_id" << BSON ("$regex" << "^" + db._id + ".")) .sort ("_id"));
+        	while (cursor->more()) {
+        		BSONObj coll = cursor->next();
+                if (!coll.getBoolField("dropped")) {
+                    cout << "\t\t" << coll._id << " chunks:" << endl;
+                    BSONObjBuilder gb;
+                    gb.append ("cond", BSON ("ns" << coll.getStringField("_id")));
+                    gb.append ("key", BSON ("shard" << 1));
+                    gb.appendCodeWScope ("reduce", "function (doc, out) {out.nChunks++}", BSONObj());
+                    gb.append ("initial", BSON ("nChunks" << 0));
+                    BSONObj info;
+                    bool ok = c.runCommand ("config", gb.obj(), info);
+                    if (!ok) throw runtime_error (info.toString());
+
+                    unsigned totalChunks = 0;
+
+                    res.forEach(function (z) {
+                        totalChunks += z.nChunks;
+                        output("\t\t\t\t" + z.shard + "\t" + z.nChunks);
+                    });
+                    if (totalChunks < 1000 || verbose) {
+                        configDB.chunks.find({ns:coll._id}).sort({min:1}).forEach(function (chunk) {
+                            output("\t\t\t" + tojson(chunk.min) + " -->> " + tojson(chunk.max) + " on : " + chunk.shard + " " + tojson(chunk.lastmod));
+                        });
+                    } else {output("\t\t\ttoo many chunksn to print, use verbose if you want to force print");}
+                }
+            });
+        }
+    });
+    print(raw);
+}
+*/

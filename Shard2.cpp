@@ -1,4 +1,4 @@
-/* Deploy a mongo system, query and update in face of network interruptions. Error if query unexpected data */
+/* Two replica-set shards. Each replica set has 2 durable servers and 1 arbiter. Insert and update while the durable servers fail and restart */
 
 #include <unistd.h>  // sleep
 #include <iostream>
@@ -71,7 +71,7 @@ static void confirmWrite (mongo::DBClientConnection& c) {
 /** Use namespace for Procedures to avoid name clashes */
 namespace _Shard2 {
 
-void insertData (mongoDeploy::ShardSet s) {
+Unit insertData (mongoDeploy::ShardSet s) {
 	using namespace mongo;
 	BSONObj info;
 
@@ -96,9 +96,10 @@ void insertData (mongoDeploy::ShardSet s) {
 		c.runCommand ("test", cmd, info);
 		cout << info << endl;
 	} catch (...) {}
+	return unit;
 }
 
-void updateData (mongoDeploy::ShardSet s, unsigned z) {
+Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 	using namespace mongo;
 
 	std::string h = mongoDeploy::hostPort (s.routers[0]);
@@ -129,6 +130,7 @@ void updateData (mongoDeploy::ShardSet s, unsigned z) {
 		}
 		//mongoTest::checkEqual (n, (unsigned long long) 0);
 	}
+	return unit;
 }
 
 /** All replica-set shard process excluding arbiters */
@@ -140,7 +142,7 @@ static std::vector<remote::Process> activeShardProcesses (mongoDeploy::ShardSet 
 	return procs;
 }
 
-void killer (mongoDeploy::ShardSet s) {
+Unit killer (mongoDeploy::ShardSet s) {
 	std::vector<remote::Process> procs = activeShardProcesses (s);
 	job::sleep (rand() % 10);
 	while (true) {
@@ -153,6 +155,7 @@ void killer (mongoDeploy::ShardSet s) {
 		std::cout << "Restarted  " << p << std::endl;
 		job::sleep (rand() % 60);
 	}
+	return unit;
 }
 }
 
@@ -165,14 +168,11 @@ void mongoTest::Shard2::registerProcedures () {
 void mongoTest::Shard2::operator() () {
 	using namespace std;
 	mongoDeploy::ShardSet s = deploy ();
-	vector< pair< remote::Host, boost::function0<void> > > mods;
-	boost::function0<void> insert = boost::bind (PROCEDURE1 (_Shard2::insertData), s);
-	boost::function1<void,unsigned> update = boost::bind (PROCEDURE2 (_Shard2::updateData), s, _1);
-	mods.push_back (make_pair (remote::thisHost(), insert));
-	push_all (mods, cluster::clientActs (0, update));
-	vector< pair< remote::Host, boost::function0<void> > > kills;
-	boost::function0<void> kill = boost::bind (PROCEDURE1 (_Shard2::killer), s);
-	kills.push_back (make_pair (remote::thisHost(), kill));
+	vector< pair< remote::Host, Action0<Unit> > > mods;
+	mods.push_back (make_pair (remote::thisHost(), action0 (PROCEDURE1 (_Shard2::insertData), s)));
+	push_all (mods, cluster::clientActs (1, action1 (PROCEDURE2 (_Shard2::updateData), s)));
+	vector< pair< remote::Host, Action0<Unit> > > kills;
+	kills.push_back (make_pair (remote::thisHost(), action0 (PROCEDURE1 (_Shard2::killer), s)));
 	remote::parallel (mods, kills);
 
 	/*	start (networkProblems);

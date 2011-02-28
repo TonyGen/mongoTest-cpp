@@ -46,13 +46,12 @@ static void loadInitialData (mongoDeploy::ShardSet s) {
 
 /** Use namespace for Procedures to avoid name clashes */
 namespace _Shard1 {
-void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
+Unit queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 	using namespace mongo;
 
 	std::string h = mongoDeploy::hostPort (s.routers[0]);
 	DBClientConnection c;
 	c.connect (h);
- std::cout << "3. Q&U " << z << std::endl;
 
 	for (unsigned i = 0; i < 100; i++) {
 		unsigned long long n;
@@ -75,9 +74,10 @@ void queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 		}
 		//mongoTest::checkEqual (n, (unsigned long long) 0);
 	}
+	return unit;
 }
 
-void killer (mongoDeploy::ShardSet s) {
+Unit killer (mongoDeploy::ShardSet s) {
 	mongoDeploy::ReplicaSet rs = s.shards[0];
 	while (true) {
 		unsigned pause = rand() % 60;
@@ -90,6 +90,7 @@ void killer (mongoDeploy::ShardSet s) {
 		remote::restart (rs.replicas[r]);
 		std::cout << "Restarted  " << r << std::endl;
 	}
+	return unit;
 }
 }
 
@@ -102,13 +103,9 @@ void mongoTest::Shard1::operator() () {
 	using namespace std;
 	mongoDeploy::ShardSet s = deploy ();
 	loadInitialData (s);
-	cout << "1. loaded" << endl;
-	boost::function1<void,unsigned> access = boost::bind (PROCEDURE2 (_Shard1::queryAndUpdateData), s, _1);
-	boost::function0<void> kill = boost::bind (PROCEDURE1 (_Shard1::killer), s);
-	vector< pair< remote::Host, boost::function0<void> > > kills;
-	kills.push_back (make_pair (remote::thisHost(), kill));
-	cout << "2. functions bound" << endl;
-	remote::parallel (cluster::clientActs (5, access), kills);
+	vector< pair< remote::Host, Action0<Unit> > > kills;
+	kills.push_back (make_pair (remote::thisHost(), action0 (PROCEDURE1 (_Shard1::killer), s)));
+	remote::parallel (cluster::clientActs (5, action1 (PROCEDURE2 (_Shard1::queryAndUpdateData), s)), kills);
 
 	/*	start (networkProblems);
 	start (addRemoveServers);

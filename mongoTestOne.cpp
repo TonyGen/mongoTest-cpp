@@ -39,7 +39,7 @@ static void loadInitialData (mongoDeploy::ReplicaSet rs) {
 
 /** Use namespace for Procedures to avoid name clashes */
 namespace _One {
-void queryAndUpdateData (mongoDeploy::ReplicaSet rs, unsigned z) {
+Unit queryAndUpdateData (mongoDeploy::ReplicaSet rs, unsigned z) {
 	using namespace mongo;
 
 	vector<mongo::HostAndPort> hs = fmap (mongoDeploy::hostAndPort, rs.replicas);
@@ -68,9 +68,10 @@ void queryAndUpdateData (mongoDeploy::ReplicaSet rs, unsigned z) {
 		}
 		mongoTest::checkEqual (n, (unsigned long long) 0);
 	}
+	return unit;
 }
 
-void killer (mongoDeploy::ReplicaSet rs) {
+Unit killer (mongoDeploy::ReplicaSet rs) {
 	while (true) {
 		unsigned pause = rand() % 60;
 		job::sleep (pause);
@@ -82,6 +83,7 @@ void killer (mongoDeploy::ReplicaSet rs) {
 		remote::restart (rs.replicas[r]);
 		std::cout << "Restarted  " << r << std::endl;
 	}
+	return unit;
 }
 }
 
@@ -94,11 +96,9 @@ void mongoTest::One::operator() () {
 	using namespace std;
 	mongoDeploy::ReplicaSet rs = deploy ();
 	loadInitialData (rs);
-	boost::function1<void,unsigned> access = boost::bind (PROCEDURE2 (_One::queryAndUpdateData), rs, _1);
-	boost::function0<void> kill = boost::bind (PROCEDURE1 (_One::killer), rs);
-	vector< pair< remote::Host, boost::function0<void> > > kills;
-	kills.push_back (make_pair (remote::thisHost(), kill));
-	remote::parallel (cluster::clientActs (5, access), kills);
+	vector< pair< remote::Host, Action0<Unit> > > kills;
+	kills.push_back (make_pair (remote::thisHost(), action0 (PROCEDURE1 (_One::killer), rs)));
+	remote::parallel (cluster::clientActs (5, action1 (PROCEDURE2 (_One::queryAndUpdateData), rs)), kills);
 /*	start (networkProblems);
 	start (addRemoveServers);
 	sleep (hours (24));
