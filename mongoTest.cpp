@@ -1,7 +1,7 @@
 /* Helper functions for tests */
 
 #include "mongoTest.h"
-#include <util/util.h>
+#include <10util/util.h>
 
 using namespace std;
 
@@ -43,7 +43,7 @@ Unit act2 () {
 }
 
 void mongoTest::Simple::operator() () {
-	Action0<Unit> act = action0 (action1 (PROCEDURE2 (_simple::act), (unsigned)1), 3);
+	Action0<Unit> act = action0 (action1 (PROCEDURE2 (_simple::act), (unsigned)10), 3);
 	Unit u = act ();
 	std::cout << u << std::endl;
 	//std::vector< std::pair< remote::Host, Action0<Unit> > > acts;
