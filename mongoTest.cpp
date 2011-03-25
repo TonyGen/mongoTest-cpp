@@ -2,6 +2,7 @@
 
 #include "mongoTest.h"
 #include <10util/util.h>
+#include <job/thread.h>
 
 using namespace std;
 
@@ -27,17 +28,17 @@ vector<mongo::BSONObj> mongoTest::xDocs (unsigned count) {
 namespace _simple {
 Unit act (unsigned delay, int z) {
 	using namespace std;
-	cout << "Yo Simple " << delay << " " << z << " " << job::thisThread() << endl;
-	job::sleep (delay);
+	cout << "Yo Simple " << delay << " " << z << " " << thread::thisThread() << endl;
+	thread::sleep (delay);
 	if (delay == 2) throw mongoTest::BadResult ("ha");
-	cout << "yo done " << delay << " " << z << " " << job::thisThread() << endl;
+	cout << "yo done " << delay << " " << z << " " << thread::thisThread() << endl;
 	return unit;
 }
 Unit act2 () {
 	using namespace std;
-	cout << "act2 begin " << job::thisThread() << endl;
-	job::sleep (30);
-	cout << "act2 end " << job::thisThread() << endl;
+	cout << "act2 begin " << thread::thisThread() << endl;
+	thread::sleep (30);
+	cout << "act2 end " << thread::thisThread() << endl;
 	return unit;
 }
 }

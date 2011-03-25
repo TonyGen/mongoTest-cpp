@@ -5,6 +5,8 @@
 #include <mongoDeploy/mongoDeploy.h>
 #include <cluster/cluster.h>
 #include "mongoTest.h"
+#include <job/thread.h>
+#include <remote/thread.h>
 
 static mongoDeploy::ReplicaSet deploy () {
 	program::Options opts;
@@ -50,7 +52,7 @@ Unit queryAndUpdateData (mongoDeploy::ReplicaSet rs, unsigned z) {
 	for (unsigned i = 0; i < 100; i++) {
 		unsigned long long n;
 		std::cout << "update " << z << " round " << i << std::endl;
-		job::sleep (z + 5);
+		::thread::sleep (z + 5);
 		try {
 			c.update ("test.col", BSONObj(), BSON ("$push" << BSON ("z" << z)), false, true);
 			n = c.count ("test.col", BSON ("z" << z));
@@ -74,13 +76,13 @@ Unit queryAndUpdateData (mongoDeploy::ReplicaSet rs, unsigned z) {
 Unit killer (mongoDeploy::ReplicaSet rs) {
 	while (true) {
 		unsigned pause = rand() % 60;
-		job::sleep (pause);
+		thread::sleep (pause);
 		unsigned r = rand() % rs.replicas.size();
-		remote::signal (SIGKILL, rs.replicas[r]);
+		rprocess::signal (SIGKILL, rs.replicas[r]);
 		std::cout << "Killed " << r << std::endl;
 		pause = rand() % 30;
-		job::sleep (pause);
-		remote::restart (rs.replicas[r]);
+		thread::sleep (pause);
+		rprocess::restart (rs.replicas[r]);
 		std::cout << "Restarted  " << r << std::endl;
 	}
 	return unit;
@@ -98,7 +100,7 @@ void mongoTest::One::operator() () {
 	loadInitialData (rs);
 	vector< pair< remote::Host, Action0<Unit> > > kills;
 	kills.push_back (make_pair (remote::thisHost(), action0 (PROCEDURE1 (_One::killer), rs)));
-	remote::parallel (cluster::clientActs (5, action1 (PROCEDURE2 (_One::queryAndUpdateData), rs)), kills);
+	rthread::parallel (cluster::clientActs (5, action1 (PROCEDURE2 (_One::queryAndUpdateData), rs)), kills);
 /*	start (networkProblems);
 	start (addRemoveServers);
 	sleep (hours (24));

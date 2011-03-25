@@ -5,6 +5,8 @@
 #include <mongoDeploy/mongoDeploy.h>
 #include <cluster/cluster.h>
 #include "mongoTest.h"
+#include <job/thread.h>
+#include <remote/thread.h>
 
 static mongoDeploy::ShardSet deploy () {
 	using namespace mongo;
@@ -87,7 +89,7 @@ Unit insertData (mongoDeploy::ShardSet s) {
 		} catch (...) {
 			std::cout << "Insert connection failed, retry next round" << std::endl;
 		}
-		job::sleep (2);
+		::thread::sleep (2);
 	}
 
 	try {
@@ -109,7 +111,7 @@ Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 	for (unsigned i = 0; i < 50; i++) {
 		unsigned long long n;
 		std::cout << "update " << z << " round " << i << std::endl;
-		job::sleep (z + 15);
+		::thread::sleep (z + 15);
 		try {
 			c.update ("test.col", BSON ("x" << i), BSON ("$push" << BSON ("z" << z)), false, true);
 			confirmWrite (c);
@@ -119,7 +121,7 @@ Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 			continue;
 		}
 		//mongoTest::checkEqual (n, numDocs/batchSize);
-		job::sleep (z);
+		::thread::sleep (z);
 		try {
 			c.update ("test.col", BSON ("x" << i), BSON ("$pull" << BSON ("z" << z)), false, true);
 			confirmWrite (c);
@@ -134,8 +136,8 @@ Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 }
 
 /** All replica-set shard process excluding arbiters */
-static std::vector<remote::Process> activeShardProcesses (mongoDeploy::ShardSet s) {
-	std::vector<remote::Process> procs;
+static std::vector<rprocess::Process> activeShardProcesses (mongoDeploy::ShardSet s) {
+	std::vector<rprocess::Process> procs;
 	for (unsigned i = 0; i < s.shards.size(); i ++)
 		procs.insert (procs.end(), s.shards[i].replicas.begin(), --s.shards[i].replicas.end());
 		// assumes last is arbiter. TODO: be smarter
@@ -143,17 +145,17 @@ static std::vector<remote::Process> activeShardProcesses (mongoDeploy::ShardSet 
 }
 
 Unit killer (mongoDeploy::ShardSet s) {
-	std::vector<remote::Process> procs = activeShardProcesses (s);
-	job::sleep (rand() % 10);
+	std::vector<rprocess::Process> procs = activeShardProcesses (s);
+	thread::sleep (rand() % 10);
 	while (true) {
 		unsigned r = rand() % procs.size();
-		remote::Process p = procs[r];
-		remote::signal (SIGKILL, p);
+		rprocess::Process p = procs[r];
+		rprocess::signal (SIGKILL, p);
 		std::cout << "Killed " << p << std::endl;
-		job::sleep (rand() % 30);
-		remote::restart (p);
+		thread::sleep (rand() % 30);
+		rprocess::restart (p);
 		std::cout << "Restarted  " << p << std::endl;
-		job::sleep (rand() % 60);
+		thread::sleep (rand() % 60);
 	}
 	return unit;
 }
@@ -173,7 +175,7 @@ void mongoTest::Shard2::operator() () {
 	push_all (mods, cluster::clientActs (1, action1 (PROCEDURE2 (_Shard2::updateData), s)));
 	vector< pair< remote::Host, Action0<Unit> > > kills;
 	kills.push_back (make_pair (remote::thisHost(), action0 (PROCEDURE1 (_Shard2::killer), s)));
-	remote::parallel (mods, kills);
+	rthread::parallel (mods, kills);
 
 	/*	start (networkProblems);
 	start (addRemoveServers);
