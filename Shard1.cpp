@@ -178,9 +178,9 @@ Unit killer (mongoDeploy::ShardSet s) {
 
 /** Register procedures that will be invoked from remote client */
 void mongoTest::Shard1::registerProcedures () {
-	REGISTER_PROCEDURE1 (_Shard1::insertData);
-	REGISTER_PROCEDURE2 (_Shard1::updateData);
-	REGISTER_PROCEDURE1 (_Shard1::killer);
+	REGISTER_PROCEDURE (_Shard1::insertData);
+	REGISTER_PROCEDURE (_Shard1::updateData);
+	REGISTER_PROCEDURE (_Shard1::killer);
 }
 
 /** Deploy Mongo shard set on servers in cluster and launch inserter, updaters, and killer on clients in cluster */
@@ -188,12 +188,12 @@ void mongoTest::Shard1::operator() () {
 	mongoDeploy::ShardSet s = deploy ();
 
 	// One insert actor and three update actors running on arbitrary clients in cluster
-	vector< pair< remote::Host, Action0<Unit> > > actors = zip (cluster::someClients(3), mapAct (action1 (PROCEDURE2(_Shard1::updateData), s), enumerate<unsigned>(3)));
-	actors.push_back (make_pair (cluster::someClient(), action0 (PROCEDURE1 (_Shard1::insertData), s)));
+	vector< pair< remote::Host, Thunk<Unit> > > actors = zip (cluster::someClients(3), fmap (PROCEDURE(_Shard1::updateData) (s), enumerate<unsigned>(3)));
+	actors.push_back (make_pair (cluster::someClient(), PROCEDURE(_Shard1::insertData) (s)));
 
 	// One killer actor running on arbitrary client in cluster
-	vector< pair< remote::Host, Action0<Unit> > > killers;
-	killers.push_back (make_pair (cluster::someClient(), action0 (PROCEDURE1 (_Shard1::killer), s)));
+	vector< pair< remote::Host, Thunk<Unit> > > killers;
+	killers.push_back (make_pair (cluster::someClient(), PROCEDURE(_Shard1::killer) (s)));
 
 	// Launch all actors, if any fail then stop all actors
 	rthread::parallel (actors, killers);
