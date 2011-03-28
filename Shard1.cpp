@@ -183,7 +183,7 @@ void mongoTest::Shard1::registerProcedures () {
 	REGISTER_PROCEDURE1 (_Shard1::killer);
 }
 
-/** Launch inserter, updaters, and killer on client cluster */
+/** Deploy Mongo shard set on servers in cluster and launch inserter, updaters, and killer on clients in cluster */
 void mongoTest::Shard1::operator() () {
 	mongoDeploy::ShardSet s = deploy ();
 
