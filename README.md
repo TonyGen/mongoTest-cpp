@@ -16,5 +16,7 @@ Install program in `/usr/local/bin`:
 Run its help to see usage:
 	mongoTest help
 
-Example - Run Shard1 test on localhost with random seed of 600:
-	mongoTest 600 0 controller localhost mongoTest::Shard1
+Example - Run Shard1 test across cluster of hosts with random seed of 42:
+	host1> mongoTest 42 0 worker
+	host2> mongoTest 42 0 worker
+	host3> mongoTest 42 0 controller host1,host2,host3 mongoTest::Shard1
