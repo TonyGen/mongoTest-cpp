@@ -1,6 +1,5 @@
-/* Deploy a mongo system, query and update in face of network interruptions. Error if query unexpected data */
+/* Two replica-set shards. Each replica set has 2 durable servers and 1 arbiter. Insert and update while the durable servers are killed and restarted. */
 
-#include <unistd.h>  // sleep
 #include <iostream>
 #include <mongoDeploy/mongoDeploy.h>
 #include <cluster/cluster.h>
@@ -8,23 +7,85 @@
 #include <job/thread.h>
 #include <remote/thread.h>
 
-static mongoDeploy::ShardSet deploy () {
-	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someClients(1));
-	program::Options opts;
-	opts.push_back (std::make_pair ("dur", ""));
-	opts.push_back (std::make_pair ("oplogSize", "600"));
-	opts.push_back (std::make_pair ("noprealloc", ""));
+using namespace std;
+
+/** Specification for a replica set of given number of active servers */
+static vector<mongoDeploy::RsMemberSpec> rsSpecWithArbiter (unsigned numActiveServers) {
 	std::vector<mongoDeploy::RsMemberSpec> specs;
-	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
-	specs.push_back (mongoDeploy::RsMemberSpec (opts, mongo::BSONObj()));
-	specs.push_back (mongoDeploy::RsMemberSpec (opts, BSON ("arbiterOnly" << true)));
-	s.addStartShard (cluster::someServers(3), specs);
+	for (unsigned i = 0; i < numActiveServers; i++)
+		specs.push_back (mongoDeploy::RsMemberSpec (program::options ("dur", "", "noprealloc", "", "oplogSize", "200"), mongo::BSONObj()));
+	specs.push_back (mongoDeploy::RsMemberSpec (program::options ("dur", "", "noprealloc", "", "oplogSize", "4"), BSON ("arbiterOnly" << true)));
+	return specs;
+}
+
+/** Launch sharded Mongo deployment on cluster of servers */
+static mongoDeploy::ShardSet deploy () {
+	using namespace mongo;
+	BSONObj info;
+
+	// Launch empty shard set with one config server and one mongos with small chunk size
+	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someClients(1), program::Options(), program::options ("chunkSize", "2"));
+
+	// Launch two shards, each a replica set of 2 severs and one arbiter
+	s.addStartShard (cluster::someServers(3), rsSpecWithArbiter(2));
+	s.addStartShard (cluster::someServers(3), rsSpecWithArbiter(2));
+
+	//connect to mongos
+	string h = mongoDeploy::hostAndPort (s.routers[0]);
+	DBClientConnection c;
+	c.connect (h);
+
+	// enable sharding on "test" db
+	BSONObj cmd = BSON ("enablesharding" << "test");
+	cout << cmd << " -> " << endl;
+	c.runCommand ("admin", cmd, info);
+	cout << info << endl;
+
+	// shard "test.col" collection on "_id"
+	cmd = BSON ("shardcollection" << "test.col" << "key" << BSON ("_id" << 1));
+	cout << cmd << " -> " << endl;
+	c.runCommand ("admin", cmd, info);
+	cout << info << endl;
+
 	return s;
 }
 
-static unsigned long long numDocs = 10000;
+/** Sample 1KB text */
+static string largeText () {
+	static string LargeText;
+	if (LargeText.size() == 0) {
+		stringstream ss;
+		for (unsigned i = 0; i < 1000; i++) ss << "a";
+		LargeText = ss.str();
+	}
+	return LargeText;
+}
 
-static void loadInitialData (mongoDeploy::ShardSet s) {
+static unsigned long long numDocs = 100000;
+static unsigned long long batchSize = 1000;
+
+/** Generate many documents */
+static vector<mongo::BSONObj> docs (unsigned round, unsigned count) {
+	vector<mongo::BSONObj> docs;
+	for (unsigned i = 0; i < count; i++)
+		docs.push_back (BSON ("_id" << (count * round) + i << "x" << i << "text" << largeText()));
+	return docs;
+}
+
+/** Issue getLastError check */
+static void confirmWrite (mongo::DBClientConnection& c) {
+	mongo::BSONObj info;
+	mongo::BSONObj cmd = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 2);
+	cout << cmd << " -> " << endl;
+    c.runCommand ("test", cmd, info);
+	cout << info << endl;
+}
+
+/** Use namespace for RPC Procedures to avoid name clashes */
+namespace _Shard1 {
+
+/** Insert batches of documents in a loop */
+Unit insertData (mongoDeploy::ShardSet s) {
 	using namespace mongo;
 	BSONObj info;
 
@@ -32,46 +93,54 @@ static void loadInitialData (mongoDeploy::ShardSet s) {
 	DBClientConnection c;
 	c.connect (h);
 
-	//BSONObj cmd = BSON ("enablesharding" << "test");
-	//cout << cmd << " -> " << endl;
-	//c.runCommand ("admin", cmd, info);
-	//cout << info << endl;
+	for (unsigned i = 0; i < numDocs/batchSize; i++) {
+		cout << "insert round " << i << endl;
+		try {
+			c.insert ("test.col", docs (i, batchSize));
+			confirmWrite (c);
+		} catch (...) {
+			cout << "Insert connection failed, retry next round" << endl;
+		}
+		::thread::sleep (2);
+	}
 
-	for (unsigned i = 0; i < numDocs/1000; i++)
-		c.insert ("test.col", mongoTest::xDocs (1000));
-
-	BSONObj getLastErr = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 2);
-	cout << getLastErr << " -> " << endl;
-    c.runCommand ("test", getLastErr, info);
-	cout << info << endl;
+	try {
+		BSONObj cmd = BSON ("dbstats" << 1);
+		cout << cmd << " -> " << endl;
+		c.runCommand ("test", cmd, info);
+		cout << info << endl;
+	} catch (...) {}
+	return unit;
 }
 
-/** Use namespace for Procedures to avoid name clashes */
-namespace _Shard1 {
-Unit queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
+/** Multi-update docs in a loop */
+Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 	using namespace mongo;
 
-	std::string h = mongoDeploy::hostPort (s.routers[0]);
+	string h = mongoDeploy::hostPort (s.routers[0]);
 	DBClientConnection c;
 	c.connect (h);
 
-	for (unsigned i = 0; i < 100; i++) {
+	for (unsigned i = 0; i < 50; i++) {
 		unsigned long long n;
-		std::cout << "update " << z << " round " << i << std::endl;
-		::thread::sleep (z + 5);
+		cout << "update " << z << " round " << i << endl;
+		::thread::sleep (z + 15);
 		try {
-			c.update ("test.col", BSONObj(), BSON ("$push" << BSON ("z" << z)), false, true);
+			c.update ("test.col", BSON ("x" << i), BSON ("$push" << BSON ("z" << z)), false, true);
+			confirmWrite (c);
 			n = c.count ("test.col", BSON ("z" << z));
 		} catch (...) {
-			std::cout << "First query after kill failed as expected" << std::endl;
+			cout << "First query after kill failed as expected" << endl;
 			continue;
 		}
-		//mongoTest::checkEqual (n, numDocs);
+		//mongoTest::checkEqual (n, numDocs/batchSize);
+		::thread::sleep (z);
 		try {
-			c.update ("test.col", BSONObj(), BSON ("$pull" << BSON ("z" << z)), false, true);
+			c.update ("test.col", BSON ("x" << i), BSON ("$pull" << BSON ("z" << z)), false, true);
+			confirmWrite (c);
 			n = c.count ("test.col", BSON ("z" << z));
 		} catch (...) {
-			std::cout << "First query after kill failed as expected" << std::endl;
+			cout << "First query after kill failed as expected" << endl;
 			continue;
 		}
 		//mongoTest::checkEqual (n, (unsigned long long) 0);
@@ -79,38 +148,53 @@ Unit queryAndUpdateData (mongoDeploy::ShardSet s, unsigned z) {
 	return unit;
 }
 
+/** All replica-set shard processes excluding arbiters */
+static vector<rprocess::Process> activeShardProcesses (mongoDeploy::ShardSet s) {
+	vector<rprocess::Process> procs;
+	for (unsigned i = 0; i < s.shards.size(); i ++) {
+		vector<rprocess::Process> rsProcs = s.shards[i].activeReplicas();
+		for (unsigned j = 0; j < rsProcs.size(); j ++) procs.push_back (rsProcs[j]);
+	}
+	return procs;
+}
+
+/** Kill random server every once in a while and restart it */
 Unit killer (mongoDeploy::ShardSet s) {
-	mongoDeploy::ReplicaSet rs = s.shards[0];
+	vector<rprocess::Process> procs = activeShardProcesses (s);
+	thread::sleep (rand() % 10);
 	while (true) {
-		unsigned pause = rand() % 60;
-		thread::sleep (pause);
-		unsigned r = rand() % rs.replicas.size();
-		rprocess::signal (SIGKILL, rs.replicas[r]);
-		std::cout << "Killed " << r << std::endl;
-		pause = rand() % 30;
-		thread::sleep (pause);
-		rprocess::restart (rs.replicas[r]);
-		std::cout << "Restarted  " << r << std::endl;
+		unsigned r = rand() % procs.size();
+		rprocess::Process p = procs[r];
+		rprocess::signal (SIGKILL, p);
+		cout << "Killed " << p << endl;
+		thread::sleep (rand() % 30);
+		rprocess::restart (p);
+		cout << "Restarted  " << p << endl;
+		thread::sleep (rand() % 60);
 	}
 	return unit;
 }
 }
 
+/** Register procedures that will be invoked from remote client */
 void mongoTest::Shard1::registerProcedures () {
-	REGISTER_PROCEDURE2 (_Shard1::queryAndUpdateData);
+	REGISTER_PROCEDURE1 (_Shard1::insertData);
+	REGISTER_PROCEDURE2 (_Shard1::updateData);
 	REGISTER_PROCEDURE1 (_Shard1::killer);
 }
 
+/** Launch inserter, updaters, and killer on client cluster */
 void mongoTest::Shard1::operator() () {
-	using namespace std;
 	mongoDeploy::ShardSet s = deploy ();
-	loadInitialData (s);
-	vector< pair< remote::Host, Action0<Unit> > > kills;
-	kills.push_back (make_pair (remote::thisHost(), action0 (PROCEDURE1 (_Shard1::killer), s)));
-	rthread::parallel (cluster::clientActs (5, action1 (PROCEDURE2 (_Shard1::queryAndUpdateData), s)), kills);
 
-	/*	start (networkProblems);
-	start (addRemoveServers);
-	sleep (hours (24));
-	stopAll (); */
+	// One insert actor and three update actors running on arbitrary clients in cluster
+	vector< pair< remote::Host, Action0<Unit> > > actors = zip (cluster::someClients(3), mapAct (action1 (PROCEDURE2(_Shard1::updateData), s), enumerate<unsigned>(3)));
+	actors.push_back (make_pair (cluster::someClient(), action0 (PROCEDURE1 (_Shard1::insertData), s)));
+
+	// One killer actor running on arbitrary client in cluster
+	vector< pair< remote::Host, Action0<Unit> > > killers;
+	killers.push_back (make_pair (cluster::someClient(), action0 (PROCEDURE1 (_Shard1::killer), s)));
+
+	// Launch all actors, if any fail then stop all actors
+	rthread::parallel (actors, killers);
 }

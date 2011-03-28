@@ -11,24 +11,9 @@
 
 namespace mongoTest {
 
-class One : public clusterRun::Routine {
-	void registerProcedures ();  // override
-	void operator() ();  // override
-};
-
 class Shard1 : public clusterRun::Routine {
 	void registerProcedures ();  // override
 	void operator() ();  // override
-};
-
-class Shard2 : public clusterRun::Routine {
-	void registerProcedures ();  // override
-	void operator() ();  // override
-};
-
-class Simple : public clusterRun::Routine {
-	void registerProcedures ();
-	void operator() ();
 };
 
 class BadResult : public std::exception {
@@ -48,14 +33,6 @@ template <class A> void checkEqual (A x, A y) {
 		throw BadResult (ss.str());
 	}
 }
-
-extern unsigned xDocTextSize;
-
-std::string makeText (unsigned length = xDocTextSize);
-
-std::vector <mongo::BSONObj> xDocs (unsigned count);
-
-//void printShardingStatus (mongo::DbClientConnection& c, bool verbose);
 
 }
 
