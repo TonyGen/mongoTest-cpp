@@ -5,7 +5,7 @@
 #include <cluster/cluster.h>
 #include "mongoTest.h"
 #include <job/thread.h>
-#include <remote/thread.h>
+#include <remoteJob/thread.h>
 
 using namespace std;
 
