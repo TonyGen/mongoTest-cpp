@@ -1,11 +1,9 @@
 /* Two replica-set shards. Each replica set has 2 durable servers and 1 arbiter. Insert and update while the durable servers are killed and restarted. */
 
 #include <iostream>
-#include <mongoDeploy/mongoDeploy.h>
 #include <cluster/cluster.h>
 #include "mongoTest.h"
 #include <job/thread.h>
-#include <remoteJob/thread.h>
 
 using namespace std;
 

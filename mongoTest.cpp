@@ -30,5 +30,7 @@ void segfaultHandler(int sig) {
 
 int main (int argc, char* argv[]) {
 	//signal (SIGSEGV, segfaultHandler);
+	mongoDeploy::registerProcedures();
+	rthread::registerProcedures();
 	clusterRun::main (routines(), argc, argv);
 }
