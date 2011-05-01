@@ -2,7 +2,7 @@
 
 #include "mongoTest.h"
 #include <10util/util.h>
-#include <job/thread.h>
+#include <10util/thread.h>
 #include <execinfo.h>
 
 using namespace std;
@@ -11,7 +11,7 @@ using namespace std;
  * Add reference to your routine below. */
 static map <string, boost::shared_ptr<clusterRun::Routine> > routines () {
 	map <string, boost::shared_ptr<clusterRun::Routine> > routines;
-	ROUTINE (mongoTest::Shard1);
+	routines.insert (ROUTINE (mongoTest::Shard1));
 	return routines;
 }
 
@@ -30,7 +30,5 @@ void segfaultHandler(int sig) {
 
 int main (int argc, char* argv[]) {
 	//signal (SIGSEGV, segfaultHandler);
-	mongoDeploy::registerProcedures();
-	rthread::registerProcedures();
 	clusterRun::main (routines(), argc, argv);
 }

@@ -3,7 +3,7 @@
 #include <iostream>
 #include <cluster/cluster.h>
 #include "mongoTest.h"
-#include <job/thread.h>
+#include <10util/thread.h>
 
 using namespace std;
 
@@ -79,6 +79,16 @@ static void confirmWrite (mongo::DBClientConnection& c) {
 	cout << info << endl;
 }
 
+/** All replica-set shard processes excluding arbiters */
+static vector<rprocess::Process> activeShardProcesses (mongoDeploy::ShardSet s) {
+	vector<rprocess::Process> procs;
+	for (unsigned i = 0; i < s.shards.size(); i ++) {
+		vector<rprocess::Process> rsProcs = s.shards[i].activeReplicas();
+		for (unsigned j = 0; j < rsProcs.size(); j ++) procs.push_back (rsProcs[j]);
+	}
+	return procs;
+}
+
 /** Use namespace for RPC Procedures to avoid name clashes */
 namespace _Shard1 {
 
@@ -115,7 +125,7 @@ Unit insertData (mongoDeploy::ShardSet s) {
 Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 	using namespace mongo;
 
-	string h = mongoDeploy::hostPort (s.routers[0]);
+	string h = mongoDeploy::hostPortString (s.routers[0]);
 	DBClientConnection c;
 	c.connect (h);
 
@@ -146,16 +156,6 @@ Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 	return unit;
 }
 
-/** All replica-set shard processes excluding arbiters */
-static vector<rprocess::Process> activeShardProcesses (mongoDeploy::ShardSet s) {
-	vector<rprocess::Process> procs;
-	for (unsigned i = 0; i < s.shards.size(); i ++) {
-		vector<rprocess::Process> rsProcs = s.shards[i].activeReplicas();
-		for (unsigned j = 0; j < rsProcs.size(); j ++) procs.push_back (rsProcs[j]);
-	}
-	return procs;
-}
-
 /** Kill random server every once in a while and restart it */
 Unit killer (mongoDeploy::ShardSet s) {
 	vector<rprocess::Process> procs = activeShardProcesses (s);
@@ -172,27 +172,65 @@ Unit killer (mongoDeploy::ShardSet s) {
 	}
 	return unit;
 }
+
+/** Watch log of local process and raise error on any ASSERT */
+Unit watchLog (rprocess::Process proc) {
+//	static const boost::regex e ("ASSERT");
+//	ifstream file (proc.process.outFilename());
+//	string line;
+//	while (file.good()) {
+//		getLine (file, line);
+//		if (boost::regex_match (line, e)) {
+//			// Get next 40 lines and raise error
+//			stringstream ss;
+//			ss << proc << " (" << proc.process.outFilename() << "):" << endl;
+//			ss << line << endl;
+//			for (unsigned i = 0; i << 40; i++)
+//				if (file.good) {
+//					getLine (file, line);
+//					ss << line << endl;
+//				}
+//			throw mongoTest::BadResult (ss.str());
+//		}
+//	}
+	return unit;
+}
 }
 
 /** Register procedures that will be invoked from remote client */
 void mongoTest::Shard1::registerProcedures () {
-	REGISTER_PROCEDURE (_Shard1::insertData);
-	REGISTER_PROCEDURE (_Shard1::updateData);
-	REGISTER_PROCEDURE (_Shard1::killer);
+	registerFun (FUN(_Shard1::insertData));
+	registerFun (FUN(_Shard1::updateData));
+	registerFun (FUN(_Shard1::killer));
+	registerFun (FUN(_Shard1::watchLog));
 }
 
-/** Deploy Mongo shard set on servers in cluster and launch inserter, updaters, and killer on clients in cluster */
+/** Task that will watch log of process, and raise error on any ASSERT */
+static pair< remote::Host, Thunk<Unit> > logWatcher (rprocess::Process proc) {
+	return make_pair (proc.host(), thunk (FUN(_Shard1::watchLog), proc));
+}
+
+/** Task that will watch logs of mongod and mongos's, and raise error on any ASSERT */
+static vector< pair< remote::Host, Thunk<Unit> > > logWatchers (mongoDeploy::ShardSet s) {
+	vector< pair< remote::Host, Thunk<Unit> > > tasks = fmap (logWatcher, activeShardProcesses (s));
+	push_all (tasks, fmap (logWatcher, s.routers));
+	return tasks;
+}
+
+/** Deploy Mongo shard set on servers in cluster, then launch inserter, updaters, killer and watchers on clients in cluster */
 void mongoTest::Shard1::operator() () {
 	mongoDeploy::ShardSet s = deploy ();
 
-	// One insert actor and three update actors running on arbitrary clients in cluster
-	vector< pair< remote::Host, Thunk<Unit> > > actors = zip (cluster::someClients(3), fmap (PROCEDURE(_Shard1::updateData) (s), enumerate<unsigned>(3)));
-	actors.push_back (make_pair (cluster::someClient(), PROCEDURE(_Shard1::insertData) (s)));
+	// One insert actor and 1 update actors running on arbitrary clients in cluster
+	vector< pair< remote::Host, Thunk<Unit> > > fore;
+	fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::insertData), s)));
+	for (unsigned i = 0; i < 1; i++)
+		fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::updateData), s, i)));
 
-	// One killer actor running on arbitrary client in cluster
-	vector< pair< remote::Host, Thunk<Unit> > > killers;
-	killers.push_back (make_pair (cluster::someClient(), PROCEDURE(_Shard1::killer) (s)));
+	// One thread watching each mongod/s log, plus one killer running on arbitrary client in cluster
+	vector< pair< remote::Host, Thunk<Unit> > > aft = logWatchers (s);
+	//aft.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::killer), s)));
 
-	// Launch all actors, if any fail then stop all actors
-	rthread::parallel (actors, killers);
+	// Launch all fore and aft threads, if any fail then stop all of them
+	rthread::parallel (fore, aft);
 }

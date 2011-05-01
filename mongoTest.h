@@ -9,7 +9,7 @@
 #include <vector>
 #include <mongo/client/dbclient.h>
 #include <mongoDeploy/mongoDeploy.h>
-#include <remoteJob/thread.h>
+#include <remote/thread.h>
 
 namespace mongoTest {
 
