@@ -72,7 +72,7 @@ static vector<mongo::BSONObj> docs (unsigned round, unsigned count) {
 /** Issue getLastError check */
 static void confirmWrite (mongo::DBClientConnection& c) {
 	mongo::BSONObj info;
-	mongo::BSONObj cmd = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 2);
+	mongo::BSONObj cmd = BSON ("getlasterror" << 1 << "fsync" << true << "w" << 1);
 	cout << cmd << " -> " << endl;
     c.runCommand ("test", cmd, info);
 	cout << info << endl;
