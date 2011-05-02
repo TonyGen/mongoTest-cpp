@@ -177,9 +177,10 @@ Unit killer (mongoDeploy::ShardSet s) {
 Unit watchLog_ (process::Process proc) {
 	static const boost::regex e ("ASSERT");
 	ifstream file (proc->outFilename().c_str());
+	file.exceptions (file.badbit | file.failbit);
 	string line;
 	unsigned lineCount = 0;
-	while (file.good()) {
+	while (!file.eof()) {
 		getline (file, line);
 		if (boost::regex_match (line, e)) {
 			// Get next 40 lines and raise error
@@ -187,7 +188,7 @@ Unit watchLog_ (process::Process proc) {
 			ss << proc << " (" << proc->outFilename() << "):" << endl;
 			ss << line << endl;
 			for (unsigned i = 0; i < 40; i++)
-				if (file.good()) {
+				if (!file.eof()) {
 					getline (file, line);
 					ss << line << endl;
 				}
