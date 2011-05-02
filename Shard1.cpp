@@ -223,8 +223,8 @@ void mongoTest::Shard1::operator() () {
 	// One insert actor and 1 update actors running on arbitrary clients in cluster
 	vector< pair< remote::Host, Thunk<Unit> > > fore;
 	fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::insertData), s)));
-	//for (unsigned i = 0; i < 1; i++)
-	//	fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::updateData), s, i)));
+	for (unsigned i = 0; i < 1; i++)
+		fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::updateData), s, i)));
 
 	// One thread watching each mongod/s log, plus one killer running on arbitrary client in cluster
 	vector< pair< remote::Host, Thunk<Unit> > > aft = logWatchers (s);
