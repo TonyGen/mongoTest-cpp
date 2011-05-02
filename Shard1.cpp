@@ -22,7 +22,7 @@ static mongoDeploy::ShardSet deploy () {
 	BSONObj info;
 
 	// Launch empty shard set with one config server and one mongos with small chunk size
-	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someClients(1), program::Options(), program::options ("chunkSize", "2"));
+	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someServers(1), program::Options(), program::options ("chunkSize", "2"));
 
 	// Launch one shard, a replica set of 2 severs and one arbiter
 	s.addStartShard (cluster::someServers(3), rsSpecWithArbiter(2));
@@ -108,7 +108,7 @@ Unit insertData (mongoDeploy::ShardSet s) {
 		} catch (...) {
 			cout << "Insert connection failed, retry next round" << endl;
 		}
-		::thread::sleep (2);
+		::thread::sleep (3);
 	}
 
 	try {
@@ -131,7 +131,7 @@ Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 	for (unsigned i = 0; i < 50; i++) {
 		unsigned long long n;
 		cout << "update " << z << " round " << i << endl;
-		::thread::sleep (z + 15);
+		::thread::sleep (z + 10);
 		try {
 			c.update ("test.col", BSON ("x" << i), BSON ("$push" << BSON ("z" << z)), false, true);
 			confirmWrite (c);
@@ -220,11 +220,10 @@ static vector< pair< remote::Host, Thunk<Unit> > > logWatchers (mongoDeploy::Sha
 void mongoTest::Shard1::operator() () {
 	mongoDeploy::ShardSet s = deploy ();
 
-	// One insert actor and 1 update actors running on arbitrary clients in cluster
+	// One insert actor and one update actor running on arbitrary clients in cluster
 	vector< pair< remote::Host, Thunk<Unit> > > fore;
 	fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::insertData), s)));
-	for (unsigned i = 0; i < 1; i++)
-		fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::updateData), s, i)));
+	fore.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::updateData), s, (unsigned)1)));
 
 	// One thread watching each mongod/s log, plus one killer running on arbitrary client in cluster
 	vector< pair< remote::Host, Thunk<Unit> > > aft = logWatchers (s);
