@@ -197,6 +197,7 @@ Unit watchLog_ (process::Process proc) {
 		if (lineCount % 50 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
 		lineCount ++;
 	}
+	cerr << "End of file reached: " << proc->outFilename() << endl;
 	return unit;
 }
 
