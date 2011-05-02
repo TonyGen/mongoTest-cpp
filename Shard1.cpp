@@ -178,7 +178,7 @@ Unit watchLog_ (process::Process proc) {
 	static const boost::regex e ("ASSERT");
 	ifstream file (proc->outFilename().c_str());
 	string line;
-	unsigned lineCount;
+	unsigned lineCount = 0;
 	while (file.good()) {
 		getline (file, line);
 		if (boost::regex_match (line, e)) {
@@ -193,7 +193,7 @@ Unit watchLog_ (process::Process proc) {
 				}
 			throw mongoTest::BadResult (ss.str());
 		}
-		if (lineCount % 100 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
+		if (lineCount % 50 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
 		lineCount ++;
 	}
 	return unit;
