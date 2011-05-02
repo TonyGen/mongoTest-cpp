@@ -236,10 +236,11 @@ void mongoTest::Shard1::operator() () {
 	fore.push_back (boost::bind (remote::eval_, cluster::someClient(), thunk (FUN(_Shard1::insertData), s)));
 	fore.push_back (boost::bind (remote::eval_, cluster::someClient(), thunk (FUN(_Shard1::updateData), s, (unsigned)1)));
 
-	// One thread watching each mongod/s log, plus one killer running on arbitrary client in cluster
-	vector< boost::function0<void> > aft = logWatchers (s);
-	//aft.push_back (make_pair (cluster::someClient(), thunk (FUN(_Shard1::killer), s)));
+	// One thread watching each mongod/s log, plus one thread killing random servers
+	vector< boost::function0<void> > aft;
+	push_all (aft, logWatchers (s));
+	aft.push_back (boost::bind (_Shard1::killer, s));
 
-	// Launch all fore and aft threads, if any fail then stop all of them
+	// Launch all fore and aft threads, if any fail then stop them all and raise failure here
 	thread::parallel (fore, aft);
 }
