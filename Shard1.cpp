@@ -220,8 +220,10 @@ static boost::function0<void> logWatcher (rprocess::Process proc) {
 /** Task that will watch logs of mongod and mongos's, and raise error on any ASSERT */
 static vector< boost::function0<void> > logWatchers (mongoDeploy::ShardSet s) {
 	vector< boost::function0<void> > tasks;
-	push_all (tasks, fmap (logWatcher, activeShardProcesses (s)));
+	push_all (tasks, fmap (logWatcher, s.configSet.cfgServers));
 	push_all (tasks, fmap (logWatcher, s.routers));
+	for (unsigned i = 0; i < s.shards.size(); i++)
+		push_all (tasks, fmap (logWatcher, s.shards[i].replicas));
 	return tasks;
 }
 
