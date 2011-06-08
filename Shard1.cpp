@@ -1,13 +1,33 @@
 /* Two replica-set shards. Each replica set has 2 durable servers and 1 arbiter. Insert and update while the durable servers are killed and restarted. */
 
+#include "Shard1.h"
 #include <iostream>
 #include <cluster/cluster.h>
-#include "mongoTest.h"
 #include <10util/thread.h>
 #include <boost/regex.hpp>
 #include <fstream>
 
 using namespace std;
+
+remote::Module _Shard1::module ("mongoTest", "Shard1.h");
+
+class BadResult : public std::exception {
+public:
+	std::string message;
+	BadResult (std::string message) : message(message) {}
+	~BadResult () throw () {}
+	const char* what() const throw () {  // override
+		return message.c_str();
+	}
+};
+
+template <class A> void checkEqual (A x, A y) {
+	if (x != y) {
+		stringstream ss;
+		ss << "Mismatch: " << x << " != " << y;
+		throw BadResult (ss.str());
+	}
+}
 
 /** Specification for a replica set of given number of active servers */
 static vector<mongoDeploy::RsMemberSpec> rsSpecWithArbiter (unsigned numActiveServers) {
@@ -81,20 +101,17 @@ static void confirmWrite (mongo::DBClientConnection& c) {
 }
 
 /** All replica-set shard processes excluding arbiters */
-static vector<rprocess::Process> activeShardProcesses (mongoDeploy::ShardSet s) {
-	vector<rprocess::Process> procs;
+static vector<remote::Process> activeShardProcesses (mongoDeploy::ShardSet s) {
+	vector<remote::Process> procs;
 	for (unsigned i = 0; i < s.shards.size(); i ++) {
-		vector<rprocess::Process> rsProcs = s.shards[i].activeReplicas();
+		vector<remote::Process> rsProcs = s.shards[i].activeReplicas();
 		for (unsigned j = 0; j < rsProcs.size(); j ++) procs.push_back (rsProcs[j]);
 	}
 	return procs;
 }
 
-/** Use namespace for RPC Procedures to avoid name clashes */
-namespace _Shard1 {
-
 /** Insert batches of documents in a loop */
-Unit insertData (mongoDeploy::ShardSet s) {
+void _Shard1::insertData (mongoDeploy::ShardSet s) {
 	using namespace mongo;
 	BSONObj info;
 
@@ -119,11 +136,10 @@ Unit insertData (mongoDeploy::ShardSet s) {
 		c.runCommand ("test", cmd, info);
 		cout << info << endl;
 	} catch (...) {}
-	return unit;
 }
 
 /** Multi-update docs in a loop */
-Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
+void _Shard1::updateData (mongoDeploy::ShardSet s, unsigned z) {
 	using namespace mongo;
 
 	string h = mongoDeploy::hostPortString (s.routers[0]);
@@ -154,27 +170,25 @@ Unit updateData (mongoDeploy::ShardSet s, unsigned z) {
 		}
 		//mongoTest::checkEqual (n, (unsigned long long) 0);
 	}
-	return unit;
 }
 
 /** Kill random server every once in a while and restart it */
-Unit killer (mongoDeploy::ShardSet s) {
-	vector<rprocess::Process> procs = activeShardProcesses (s);
+void _Shard1::killer (mongoDeploy::ShardSet s) {
+	vector<remote::Process> procs = activeShardProcesses (s);
 	while (true) {
 		thread::sleep (10 + (rand() % 60));
 		unsigned r = rand() % procs.size();
-		rprocess::Process p = procs[r];
-		rprocess::signal (SIGKILL, p);
+		remote::Process p = procs[r];
+		remote::signal (SIGKILL, p);
 		cout << "Killed " << p << endl;
 		thread::sleep (rand() % 30);
-		rprocess::restart (p);
+		remote::restart (p);
 		cout << "Restarted  " << p << endl;
 	}
-	return unit;
 }
 
 /** Watch log of local process and raise error on any ASSERT */
-Unit watchLog_ (process::Process proc) {
+static void watchLog_ (process::Process proc) {
 	static const boost::regex e ("ASSERT");
 	ifstream file (proc->outFilename().c_str());
 	file.exceptions (file.badbit | file.failbit);
@@ -192,30 +206,19 @@ Unit watchLog_ (process::Process proc) {
 					getline (file, line);
 					ss << line << endl;
 				}
-			throw mongoTest::BadResult (ss.str());
+			throw BadResult (ss.str());
 		}
 		if (lineCount % 50 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
 		lineCount ++;
 	}
 	cerr << "End of file reached: " << proc->outFilename() << endl;
-	return unit;
 }
 
-boost::function1<Unit,process::Process> watchLog () {return boost::bind (_Shard1::watchLog_, _1);}
-
-}
-
-/** Register procedures that will be invoked from remote client */
-void mongoTest::Shard1::registerProcedures () {
-	registerFun (FUN(_Shard1::insertData));
-	registerFun (FUN(_Shard1::updateData));
-	registerFun (FUN(_Shard1::killer));
-	registerFunF (FUN(_Shard1::watchLog));
-}
+boost::function1<void,process::Process> _Shard1::watchLog () {return boost::bind (watchLog_, _1);}
 
 /** Task that will watch log of process, and raise error on any ASSERT */
-static boost::function0<void> logWatcher (rprocess::Process proc) {
-	return boost::bind (remote::apply_<process::Process_>, thunk (FUN(_Shard1::watchLog)), proc);
+static boost::function0<void> logWatcher (remote::Process proc) {
+	return boost::bind (remote::apply<void, process::Process_>, remote::thunk (MFUN(_Shard1,watchLog)), proc);
 }
 
 /** Task that will watch logs of mongod and mongos's, and raise error on any ASSERT */
@@ -229,13 +232,13 @@ static vector< boost::function0<void> > logWatchers (mongoDeploy::ShardSet s) {
 }
 
 /** Deploy Mongo shard set on servers in cluster, then launch inserter, updaters, killer and watchers on clients in cluster */
-void mongoTest::Shard1::operator() () {
+void Shard1::run () {
 	mongoDeploy::ShardSet s = deploy ();
 
 	// One insert actor and one update actor running on arbitrary clients in cluster
 	vector< boost::function0<void> > fore;
-	fore.push_back (boost::bind (remote::eval_, cluster::someClient(), thunk (FUN(_Shard1::insertData), s)));
-	fore.push_back (boost::bind (remote::eval_, cluster::someClient(), thunk (FUN(_Shard1::updateData), s, (unsigned)1)));
+	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::thunk (MFUN(_Shard1,insertData), s)));
+	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::thunk (MFUN(_Shard1,updateData), s, (unsigned)1)));
 
 	// One thread watching each mongod/s log, plus one thread killing random servers
 	vector< boost::function0<void> > aft;
