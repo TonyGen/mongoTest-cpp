@@ -195,10 +195,10 @@ void _Shard1::killer (mongoDeploy::ShardSet s) {
 static void watchLog_ (process::Process proc) {
 	static const boost::regex e ("ASSERT");
 	ifstream file (proc->outFilename().c_str());
-	file.exceptions (file.badbit | file.failbit);
 	string line;
 	unsigned lineCount = 0;
-	while (!file.eof()) try {
+	while (true) try {
+		while (file.eof()) {thread::sleep (1); file.clear();}
 		getline (file, line);
 		if (boost::regex_match (line, e)) {
 			// Get next 40 lines and raise error
@@ -212,10 +212,9 @@ static void watchLog_ (process::Process proc) {
 				}
 			throw BadResult (ss.str());
 		}
-		if (lineCount % 50 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
+		if (lineCount % 100 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
 		lineCount ++;
 	} catch (exception &e) {except::raise (e);}
-	cerr << "End of file reached: " << proc->outFilename() << endl;
 }
 
 boost::function1<void,process::Process> _Shard1::watchLog () {return boost::bind (watchLog_, _1);}
