@@ -6,10 +6,14 @@
 #include <10util/thread.h>
 #include <boost/regex.hpp>
 #include <fstream>
+#include <10util/vector.h>
+#include <10util/except.h>
 
 using namespace std;
 
-remote::Module _Shard1::module ("mongoTest", "Shard1.h");
+remote::Module _Shard1::module (
+	items<string>("mongoTest", "mongoDeploy", "mongoclient", "cluster", "remote", "10util", "boost_thread-mt", "boost_serialization-mt", "boost_system-mt"),
+	items<string>("mongoTest/Shard1.h"));
 
 class BadResult : public std::exception {
 public:
@@ -194,7 +198,7 @@ static void watchLog_ (process::Process proc) {
 	file.exceptions (file.badbit | file.failbit);
 	string line;
 	unsigned lineCount = 0;
-	while (!file.eof()) {
+	while (!file.eof()) try {
 		getline (file, line);
 		if (boost::regex_match (line, e)) {
 			// Get next 40 lines and raise error
@@ -210,7 +214,7 @@ static void watchLog_ (process::Process proc) {
 		}
 		if (lineCount % 50 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
 		lineCount ++;
-	}
+	} catch (exception &e) {except::raise (e);}
 	cerr << "End of file reached: " << proc->outFilename() << endl;
 }
 
