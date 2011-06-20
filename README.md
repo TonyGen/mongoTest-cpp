@@ -1,6 +1,6 @@
 Install dependent libraries first:
 
-- [cluster](https://github.com/TonyGen/cluster-cpp)
+- [10cluster](https://github.com/TonyGen/10cluster-cpp)
 - [mongoDeploy](https://github.com/TonyGen/mongoDeploy-cpp)
 
 Download and remove '-ccp' suffix:
@@ -16,4 +16,4 @@ Install library in `/usr/local/lib` and header files in `/usr/local/include/mong
 
 	sudo scons install
 
-Do this installation on every machine in cluster, then invoke it from `10shell`.
+Do this installation on every machine in cluster, then invoke a test via [10shell](https://github.com/TonyGen/10shell-cpp).
