@@ -3,7 +3,6 @@
 #pragma once
 
 #include <mongoDeploy/mongoDeploy.h>
-#include <boost/function.hpp>
 #include <10util/process.h>
 
 namespace Shard1 {
@@ -15,5 +14,5 @@ namespace _Shard1 {
 	void insertData (mongoDeploy::ShardSet);
 	void updateData (mongoDeploy::ShardSet, unsigned);
 	void killer (mongoDeploy::ShardSet);
-	boost::function1<void,process::Process> watchLog ();
+	void watchLog (process::Process);
 }

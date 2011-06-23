@@ -2,10 +2,11 @@
 
 #include "Shard1.h"
 #include <iostream>
+#include <fstream>
+#include <boost/function.hpp>
+#include <boost/regex.hpp>
 #include <10cluster/cluster.h>
 #include <10util/thread.h>
-#include <boost/regex.hpp>
-#include <fstream>
 #include <10util/vector.h>
 #include <10util/except.h>
 
@@ -192,7 +193,7 @@ void _Shard1::killer (mongoDeploy::ShardSet s) {
 }
 
 /** Watch log of local process and raise error on any ASSERT */
-static void watchLog_ (process::Process proc) {
+void _Shard1::watchLog (process::Process proc) {
 	static const boost::regex e ("ASSERT");
 	ifstream file (proc->outFilename().c_str());
 	string line;
@@ -217,11 +218,9 @@ static void watchLog_ (process::Process proc) {
 	} catch (exception &e) {except::raise (e);}
 }
 
-boost::function1<void,process::Process> _Shard1::watchLog () {return boost::bind (watchLog_, _1);}
-
 /** Task that will watch log of process, and raise error on any ASSERT */
 static boost::function0<void> logWatcher (remote::Process proc) {
-	return boost::bind (remote::apply<void, process::Process_>, remote::thunk (MFUN(_Shard1,watchLog)), proc);
+	return boost::bind (remote::apply<void, process::Process_>, MFUN(_Shard1,watchLog), proc);
 }
 
 /** Task that will watch logs of mongod and mongos's, and raise error on any ASSERT */
@@ -240,8 +239,8 @@ void Shard1::run () {
 
 	// One insert actor and one update actor running on arbitrary clients in cluster
 	vector< boost::function0<void> > fore;
-	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::thunk (MFUN(_Shard1,insertData), s)));
-	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::thunk (MFUN(_Shard1,updateData), s, (unsigned)1)));
+	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::bind (MFUN(_Shard1,insertData), s)));
+	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::bind (MFUN(_Shard1,updateData), s, (unsigned)1)));
 
 	// One thread watching each mongod/s log, plus one thread killing random servers
 	vector< boost::function0<void> > aft;
