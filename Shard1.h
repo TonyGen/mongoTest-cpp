@@ -3,14 +3,13 @@
 #pragma once
 
 #include <mongoDeploy/mongoDeploy.h>
-#include <10util/process.h>
 
 namespace Shard1 {
 	void run ();
 }
 
 namespace _Shard1 {
-	extern remote::Module module;
+	extern module::Module module;
 	void insertData (mongoDeploy::ShardSet);
 	void updateData (mongoDeploy::ShardSet, unsigned);
 	void killer (mongoDeploy::ShardSet);

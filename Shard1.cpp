@@ -12,9 +12,9 @@
 
 using namespace std;
 
-remote::Module _Shard1::module (
-	items<string>("mongoTest", "mongoDeploy", "mongoclient", "cluster", "remote", "10util", "boost_thread-mt", "boost_serialization-mt", "boost_system-mt"),
-	items<string>("mongoTest/Shard1.h"));
+module::Module _Shard1::module (
+	items<string>("mongoTest", "mongoDeploy", "mongoclient", "10cluster", "10remote", "10util", "boost_thread-mt", "boost_serialization-mt", "boost_system-mt"),
+	"mongoTest/Shard1.h");
 
 class BadResult : public std::exception {
 public:
