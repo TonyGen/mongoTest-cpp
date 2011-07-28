@@ -1,6 +1,5 @@
 
 #include "mongoTest.h"
-#include <10cluster/cluster.h>
 
 using namespace std;
 using namespace mongo;

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <mongoDeploy/mongoDeploy.h>
+#include <10cluster/cluster.h>
 
 namespace mongoTest {
 
