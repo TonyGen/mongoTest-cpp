@@ -1,6 +1,7 @@
 /* Two replica-set shards. Each replica set has 2 durable servers and 1 arbiter. Insert and update while the durable servers are killed and restarted. */
 
 #include "Shard1.h"
+#include "mongoTest.h"
 #include <iostream>
 #include <fstream>
 #include <boost/function.hpp>
@@ -32,46 +33,6 @@ template <class A> void checkEqual (A x, A y) {
 		ss << "Mismatch: " << x << " != " << y;
 		throw BadResult (ss.str());
 	}
-}
-
-/** Specification for a replica set of given number of active servers */
-static vector<mongoDeploy::RsMemberSpec> rsSpecWithArbiter (unsigned numActiveServers) {
-	std::vector<mongoDeploy::RsMemberSpec> specs;
-	for (unsigned i = 0; i < numActiveServers; i++)
-		specs.push_back (mongoDeploy::RsMemberSpec (program::options ("dur", "", "noprealloc", "", "oplogSize", "200"), mongo::BSONObj()));
-	specs.push_back (mongoDeploy::RsMemberSpec (program::options ("dur", "", "noprealloc", "", "oplogSize", "4"), BSON ("arbiterOnly" << true)));
-	return specs;
-}
-
-/** Launch sharded Mongo deployment on cluster of servers */
-static mongoDeploy::ShardSet deploy () {
-	using namespace mongo;
-	BSONObj info;
-
-	// Launch empty shard set with one config server and one mongos with small chunk size
-	mongoDeploy::ShardSet s = mongoDeploy::startShardSet (cluster::someServers(1), cluster::someServers(1), program::Options(), program::options ("chunkSize", "2"));
-
-	// Launch one shard, a replica set of 2 severs and one arbiter
-	s.addStartShard (cluster::someServers(3), rsSpecWithArbiter(2));
-
-	//connect to mongos
-	string h = mongoDeploy::hostAndPort (s.routers[0]);
-	DBClientConnection c;
-	c.connect (h);
-
-	// enable sharding on "test" db
-	BSONObj cmd = BSON ("enablesharding" << "test");
-	cout << cmd << " -> " << endl;
-	c.runCommand ("admin", cmd, info);
-	cout << info << endl;
-
-	// shard "test.col" collection on "_id"
-	cmd = BSON ("shardcollection" << "test.col" << "key" << BSON ("_id" << 1));
-	cout << cmd << " -> " << endl;
-	c.runCommand ("admin", cmd, info);
-	cout << info << endl;
-
-	return s;
 }
 
 /** Sample 1KB text */
@@ -235,7 +196,9 @@ static vector< boost::function0<void> > logWatchers (mongoDeploy::ShardSet s) {
 
 /** Deploy Mongo shard set on servers in cluster, then launch inserter, updaters, killer and watchers on clients in cluster */
 void Shard1::run () {
-	mongoDeploy::ShardSet s = deploy ();
+	mongoDeploy::ShardSet s = mongoTest::deployCluster (2, 2);
+	mongoDeploy::shardDatabase (s.routers[0], "test");
+	mongoDeploy::shardCollection (s.routers[0], "test.col", BSON ("_id" << 1));
 
 	// One insert actor and one update actor running on arbitrary clients in cluster
 	vector< boost::function0<void> > fore;
