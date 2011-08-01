@@ -153,35 +153,9 @@ void _Shard1::killer (mongoDeploy::ShardSet s) {
 	}
 }
 
-/** Watch log of local process and raise error on any ASSERT */
-void _Shard1::watchLog (process::Process proc) {
-	static const boost::regex e ("ASSERT");
-	ifstream file (proc->outFilename().c_str());
-	string line;
-	unsigned lineCount = 0;
-	while (true) try {
-		while (file.eof()) {thread::sleep (1); file.clear();}
-		getline (file, line);
-		if (boost::regex_match (line, e)) {
-			// Get next 40 lines and raise error
-			stringstream ss;
-			ss << proc << " (" << proc->outFilename() << "):" << endl;
-			ss << line << endl;
-			for (unsigned i = 0; i < 40; i++)
-				if (!file.eof()) {
-					getline (file, line);
-					ss << line << endl;
-				}
-			throw BadResult (ss.str());
-		}
-		if (lineCount % 100 == 0) cout << "Watching " << proc->outFilename() << ", line count = " << lineCount << endl;
-		lineCount ++;
-	} catch (exception &e) {except::raise (e);}
-}
-
 /** Task that will watch log of process, and raise error on any ASSERT */
 static boost::function0<void> logWatcher (remote::Process proc) {
-	return boost::bind (remote::apply<void, process::Process_>, MFUN(_Shard1,watchLog), proc);
+	return boost::bind (mongoTest::watchLogR, remote::bind (MFUN(mongoTest,regex_match), string("ASSERT")), 100, 500, proc);
 }
 
 /** Task that will watch logs of mongod and mongos's, and raise error on any ASSERT */

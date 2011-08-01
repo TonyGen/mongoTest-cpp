@@ -13,5 +13,4 @@ namespace _Shard1 {
 	void insertData (mongoDeploy::ShardSet);
 	void updateData (mongoDeploy::ShardSet, unsigned);
 	void killer (mongoDeploy::ShardSet);
-	void watchLog (process::Process);
 }
