@@ -176,8 +176,8 @@ void Shard1::run () {
 
 	// One insert actor and one update actor running on arbitrary clients in cluster
 	vector< boost::function0<void> > fore;
-	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::bind (MFUN(_Shard1,insertData), s)));
-	fore.push_back (boost::bind (remote::eval<void>, cluster::someClient(), remote::bind (MFUN(_Shard1,updateData), s, (unsigned)1)));
+	fore.push_back (boost::bind (remote::eval<void>, remote::bind (MFUN(_Shard1,insertData), s), cluster::someClient()));
+	fore.push_back (boost::bind (remote::eval<void>, remote::bind (MFUN(_Shard1,updateData), s, (unsigned)1), cluster::someClient()));
 
 	// One thread watching each mongod/s log, plus one thread killing random servers
 	vector< boost::function0<void> > aft;

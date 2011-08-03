@@ -40,7 +40,7 @@ void watchLogFile (boost::function1<bool,std::string> lineTest, unsigned charsBe
 
 /** Watch process log (as it grows) forever. Throw LogAlert when a log line passes test, with N chars before and M chars after included in error message. */
 inline void watchLog (boost::function1<bool,std::string> lineTest, unsigned charsBefore, unsigned charsAfter, process::Process proc) {
-	watchLogFile (lineTest, charsBefore, charsAfter, proc->outFilename());}
+	watchLogFile (lineTest, charsBefore, charsAfter, process::logFilename (proc.program));}
 inline void watchLog_ (remote::Function1<bool,std::string> lineTest, unsigned charsBefore, unsigned charsAfter, process::Process proc) {
 	watchLog (*lineTest, charsBefore, charsAfter, proc);}
 inline void watchLogR (remote::Function1<bool,std::string> lineTest, unsigned charsBefore, unsigned charsAfter, remote::Process proc) {
